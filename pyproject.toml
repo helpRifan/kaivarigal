@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hwrobot"
+version = "0.1.0"
+description = "A pen-plotter robot that writes on real paper in my own handwriting."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+# Install only what the phase you're on needs, e.g. `pip install -e ".[dev]"`.
+dev = ["pytest>=8.0"]
+model = ["torch>=2.2"]                       # Phase 2
+vision = ["opencv-python>=4.9"]              # Phase 3
+app = ["fastapi>=0.110", "uvicorn>=0.29"]    # Phase 4
+hardware = ["pyserial>=3.5"]                 # Phase 5
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

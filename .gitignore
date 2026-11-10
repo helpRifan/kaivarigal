@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Virtual env
+.venv/
+venv/
+
+# Data & models (large / personal) — keep small fixtures only
+data/*
+!data/.gitkeep
+!data/fixtures/
+models/*
+!models/.gitkeep
+
+# Generated output
+out/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
