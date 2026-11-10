@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f0e8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121418" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Write on real paper in my own handwriting with a pen plotter.">
+  <title>Kaivarigal</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f47b8'/%3E%3Cpath d='M6 21c3-7 5-9 6-6s-1 7 2 3 3-8 5-6-1 6 2 5 3-3 5-4' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <a class="skip" href="#view">Skip to content</a>
+  <div class="app">
+    <header class="top">
+      <a class="brand" href="#/write" aria-label="Kaivarigal, home">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M6 21c3-7 5-9 6-6s-1 7 2 3 3-8 5-6-1 6 2 5 3-3 5-4"/></svg>
+        <span>Kaivarigal</span>
+      </a>
+      <div class="status" id="status" role="status" aria-live="polite">
+        <span class="dot"></span><span class="status-text">Connecting…</span>
+      </div>
+    </header>
+
+    <nav class="nav" aria-label="Main">
+      <a href="#/write" data-route="write"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg><span>Write</span></a>
+      <a href="#/scan" data-route="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 10h8M8 14h8"/></svg><span>Scan</span></a>
+      <a href="#/capture" data-route="capture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17c2-6 4-8 5-5s-1 6 2 3 3-7 5-5-1 5 2 4 3-3 4-3"/></svg><span>Capture</span></a>
+      <a href="#/history" data-route="history"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>History</span></a>
+      <a href="#/calibrate" data-route="calibrate"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg><span>Calibrate</span></a>
+    </nav>
+
+    <main id="view" tabindex="-1"></main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -20,6 +20,10 @@ models/*
 # Generated output
 out/
 
+# Installed agent skills (reinstall from skills-lock.json) and their scratch
+.agents/
+.taste-skill/
+
 # Editors / OS
 .vscode/
 .idea/

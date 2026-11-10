@@ -6,7 +6,8 @@ A pen plotter that writes on real paper in my own handwriting.
 typed text → handwriting model → strokes (mm) → layout onto detected lines → G-code → GRBL → paper
 ```
 
-See `CLAUDE.md` for the full design. **Current phase: 1 — skeleton.**
+See `CLAUDE.md` for the full design and `docs/roadmap.md` for the build order.
+**Current step: the web app runs end to end on fake data** (placeholder handwriting, guessed lines, simulator).
 
 ## Setup (Windows, PowerShell)
 
@@ -17,7 +18,7 @@ cd E:\handwrit
 py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-pip install -e ".[dev]"
+pip install -e ".[dev,app]"
 ```
 
 If PowerShell refuses to run `Activate.ps1` ("running scripts is disabled"), run this once:
@@ -33,6 +34,16 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```powershell
 pytest
 ```
+
+## Run the app
+
+```powershell
+python -m hwrobot.app
+```
+
+Open http://localhost:8000. To use it from your phone on the same Wi-Fi, start it with
+`python -m hwrobot.app --host 0.0.0.0` and open `http://<laptop-ip>:8000` on the phone.
+Samples, history and settings are saved under `data\` (git-ignored).
 
 ## Try the simulator
 
