@@ -9,6 +9,7 @@ dist/
 # Virtual env
 .venv/
 venv/
+.tfenv/
 
 # Data & models (large / personal) — keep small fixtures only
 data/*

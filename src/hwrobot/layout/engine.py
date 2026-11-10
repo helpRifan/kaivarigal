@@ -25,6 +25,18 @@ INDENT_MM = 1.0
 BASELINE_LIFT_MM = 0.4
 
 
+@dataclass(frozen=True)
+class LineAdjust:
+    """Manual correction for one line, made in the UI after looking at the preview."""
+
+    dy_mm: float = 0.0           # + moves the writing up
+    tilt_deg: float = 0.0        # + rotates anticlockwise (end of line goes up)
+    seed: int | None = None      # a different take of this line only
+
+    def is_identity(self) -> bool:
+        return self.dy_mm == 0 and self.tilt_deg == 0 and self.seed is None
+
+
 @dataclass
 class PlacedLine:
     line_id: str
@@ -50,7 +62,9 @@ def layout_page(
     synth: HandwritingSynth,
     style: Style,
     skip_used: bool = True,
+    adjust: dict[str, LineAdjust] | None = None,
 ) -> LayoutResult:
+    """``adjust`` holds per-line hand corrections, keyed by the line the writing lands on."""
     result = LayoutResult()
     unknown = set(assignments) - {l.id for l in page.lines}
     if unknown:
@@ -63,6 +77,7 @@ def layout_page(
             "tall letters may touch the line above."
         )
 
+    planned: list[tuple[RuledLine, str, bool]] = []
     carry: list[str] = []
     for line in page.lines:
         own = assignments.get(line.id, "").split()
@@ -81,12 +96,25 @@ def layout_page(
 
         fitted, carry = _fit_words(words, line, synth, style)
         if fitted:
-            text = " ".join(fitted)
-            result.lines.append(PlacedLine(line.id, text, _place(text, line, synth, style, result), continued))
+            planned.append((line, " ".join(fitted), continued))
 
     if carry:
         result.overflow += (" " if result.overflow else "") + " ".join(carry)
         result.warnings.append(f"Page is full; {len(carry)} word(s) didn't fit.")
+
+    adjust = adjust or {}
+    rendered = _render(planned, synth, style, adjust)
+    for (line, text, continued), pts in zip(planned, rendered):
+        pts = _place(pts, text, line, result, style.baseline_mm)
+        adj = adjust.get(line.id)
+        if adj and len(pts):
+            pts = _nudge(pts, line, adj)
+        result.lines.append(PlacedLine(line.id, text, pts, continued))
+
+    changed = sorted(getattr(synth, "last_unsupported", set()) - {"\n", "\t"})
+    if changed:
+        shown = " ".join(repr(c) for c in changed[:8])
+        result.warnings.append(f"The handwriting can't write {shown}; replaced or left out.")
     return result
 
 
@@ -106,8 +134,36 @@ def _fit_words(
     return words, []
 
 
-def _place(text: str, line: RuledLine, synth: HandwritingSynth, style: Style, result: LayoutResult) -> S.Points:
-    pts = synth.write(text, style)
+def _render(planned: list[tuple[RuledLine, str, bool]], synth: HandwritingSynth, style: Style,
+            adjust: dict[str, LineAdjust]) -> list[S.Points]:
+    """Render every planned line, batching lines that share a style (per-line seeds split them)."""
+    styles = [style.with_(seed=adjust[l.id].seed) if l.id in adjust and adjust[l.id].seed is not None
+              else style for l, _, _ in planned]
+    out: list[S.Points | None] = [None] * len(planned)
+    many = getattr(synth, "write_many", None)
+    for st in dict.fromkeys(styles):
+        idx = [i for i, s in enumerate(styles) if s == st]
+        texts = [planned[i][1] for i in idx]
+        pts = many(texts, st) if many else [synth.write(t, st) for t in texts]
+        for i, p in zip(idx, pts):
+            out[i] = p
+    return out  # type: ignore[return-value]
+
+
+def _nudge(pts: S.Points, line: RuledLine, adj: LineAdjust) -> S.Points:
+    """Tilt about the start of the line, then move up/down."""
+    out = pts.copy()
+    if adj.tilt_deg:
+        t = np.radians(adj.tilt_deg)
+        ox, oy = line.x_start_mm, line.y_mm
+        x, y = out[:, 0] - ox, out[:, 1] - oy
+        out[:, 0] = ox + x * np.cos(t) + y * np.sin(t)
+        out[:, 1] = oy - x * np.sin(t) + y * np.cos(t)
+    out[:, 1] -= adj.dy_mm
+    return out
+
+
+def _place(pts: S.Points, text: str, line: RuledLine, result: LayoutResult, raise_mm: float = 0.0) -> S.Points:
     if len(pts) == 0:
         return pts
     avail = line.width_mm - INDENT_MM
@@ -119,4 +175,4 @@ def _place(text: str, line: RuledLine, synth: HandwritingSynth, style: Style, re
             result.warnings.append(f"“{text[:24]}” was squeezed to fit its line.")
     x0 = S.bounding_box(pts)[0]
     shift = INDENT_MM - min(x0, 0.0)
-    return S.translate(pts, line.x_start_mm + shift, line.y_mm - BASELINE_LIFT_MM)
+    return S.translate(pts, line.x_start_mm + shift, line.y_mm - BASELINE_LIFT_MM - raise_mm)

@@ -12,6 +12,8 @@ const ICON = {
   stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
   trace: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1" stroke-dasharray="3 2.5"/></svg>',
   up: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
+  tiltup: '<svg viewBox="0 0 24 24"><path d="M3 18L21 10"/><path d="M16 8l5 2-2 5"/></svg>',
+  tiltdown: '<svg viewBox="0 0 24 24"><path d="M3 10l18 8"/><path d="M19 13l2 5-5 1"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   file: '<svg viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg>',
   camera: '<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
@@ -59,6 +61,7 @@ const store = {
   page: null,
   pageId: saved.pageId || null,
   assignments: saved.assignments || {},
+  adjust: saved.adjust || {},
   selected: saved.selected || null,
   style: saved.style || null,
   profile: saved.profile || "normal",
@@ -67,6 +70,7 @@ const store = {
   tab: saved.tab || "text",
   zoom: false,
   presets: [],
+  hands: [],
   preview: null,
   job: null,
   status: null,
@@ -74,15 +78,22 @@ const store = {
 
 function persist() {
   try {
-    const { pageId, assignments, selected, style, profile, skipUsed, feedRate, tab } = store;
-    localStorage.setItem("kaivarigal", JSON.stringify({ pageId, assignments, selected, style, profile, skipUsed, feedRate, tab }));
+    const { pageId, assignments, adjust, selected, style, profile, skipUsed, feedRate, tab } = store;
+    localStorage.setItem("kaivarigal", JSON.stringify({ pageId, assignments, adjust, selected, style, profile, skipUsed, feedRate, tab }));
   } catch { /* storage blocked: fine */ }
 }
 
 async function loadPresets() {
   if (store.presets.length) return;
-  store.presets = await api("/api/styles");
-  if (!store.style) store.style = { ...store.presets[0].style };
+  [store.presets, store.hands] = await Promise.all([api("/api/styles"), api("/api/hands")]);
+  // Older saved styles predate the handwriting picker: start them from the default profile.
+  if (!store.style || !("hand" in store.style)) store.style = { ...store.presets[0].style };
+  store.style = { ...store.presets[0].style, ...store.style }; // fill in fields added later
+  if (!store.hands.some((h) => h.id === store.style.hand)) {
+    const fallback = store.hands.find((h) => h.id === "hs-9") || store.hands[0];
+    store.style = { ...store.style, hand: fallback?.id || "hs-9" };
+  }
+  persist();
 }
 
 async function ensurePage() {
@@ -98,10 +109,12 @@ function setPage(page, reset = true) {
   store.pageId = page.id;
   if (reset) {
     store.assignments = {};
+    store.adjust = {};
     store.selected = page.lines.find((l) => !l.has_writing)?.id || page.lines[0]?.id || null;
   }
   const ids = new Set(page.lines.map((l) => l.id));
   for (const k of Object.keys(store.assignments)) if (!ids.has(k)) delete store.assignments[k];
+  for (const k of Object.keys(store.adjust)) if (!ids.has(k)) delete store.adjust[k];
   if (store.selected && !ids.has(store.selected)) store.selected = page.lines[0]?.id || null;
   store.preview = null;
   persist();
@@ -209,7 +222,8 @@ function drawStageBar() {
     <h1>${esc(p.label)}</h1>
     <span class="badge num">${p.lines.length} lines${used ? ` · ${used} already written` : ""}</span>
     ${p.simulated ? '<span class="badge fake" title="Lines were guessed, not detected">Lines guessed</span>' : ""}
-    ${s?.model_simulated !== false ? '<span class="badge fake" title="The handwriting model is not trained yet">Placeholder handwriting</span>' : ""}
+    ${s && s.model_simulated ? '<span class="badge fake" title="The handwriting model is not available">Placeholder handwriting</span>' : ""}
+    <span class="badge accent" id="busy" hidden>Writing…</span>
     <span style="margin-left:auto"></span>
     <button class="btn ghost small" id="zoom" aria-pressed="${!!store.zoom}">${store.zoom ? "Fit page" : "Zoom in"}</button>
     <a class="btn ghost small" href="#/scan">Change page</a>`;
@@ -314,28 +328,35 @@ function drawInkProgress() {
 }
 
 let previewTimer, previewSeq = 0;
-function schedulePreview(ms = 250) {
+function schedulePreview(ms) {
+  // The real model takes a few seconds per page, so wait for a pause in typing.
+  if (ms === undefined) ms = store.status && !store.status.model_simulated ? 700 : 250;
   clearTimeout(previewTimer);
   previewTimer = setTimeout(refreshPreview, ms);
 }
+const setBusy = (on) => { const b = $("#busy"); if (b) b.hidden = !on; };
 
 function writePayload() {
   const assignments = {};
   for (const [k, v] of Object.entries(store.assignments)) if (v.trim()) assignments[k] = v;
-  return { page_id: store.page.id, assignments, style: store.style, skip_used: store.skipUsed };
+  const style = { baseline_mm: 0, ...store.style };
+  return { page_id: store.page.id, assignments, style, skip_used: store.skipUsed, line_adjust: store.adjust };
 }
 
 async function refreshPreview() {
   if (!store.page) return;
   const seq = ++previewSeq;
+  setBusy(true);
   try {
     const pv = await api("/api/preview", { body: writePayload() });
     if (seq !== previewSeq) return;
+    setBusy(false);
     store.preview = pv;
     drawInk();
     renderWarnings();
     if (store.tab === "plot") renderPlot();
   } catch (e) {
+    if (seq === previewSeq) setBusy(false);
     if (/Page not found/.test(e.message)) { store.page = null; store.pageId = null; await ensurePage(); drawStageBar(); drawPage(); return refreshPreview(); }
     fail(e);
   }
@@ -352,6 +373,7 @@ function renderWarnings() {
   const w = store.preview?.warnings || [];
   box.innerHTML = w.length ? `<div class="notice" role="alert"><ul>${w.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
   renderAssigned();
+  if (store.selected) renderAdjust(store.selected);
 }
 
 // ---- Text tab
@@ -375,6 +397,17 @@ function renderText() {
       <label class="btn file-btn">${ICON.file} Import .txt<input type="file" id="importtxt" accept=".txt,text/plain"></label>
       <button class="btn ghost" id="clearline" ${store.assignments[line.id] ? "" : "disabled"}>Clear line</button>
     </div>
+    <section class="adjust" aria-labelledby="adjhead">
+      <div class="row"><h3 class="grow" id="adjhead">Adjust this line</h3><span class="small muted num" id="adjval"></span></div>
+      <div class="adj-grid" id="adjgrid">
+        <button class="btn" data-adj="up">${ICON.up} Up</button>
+        <button class="btn" data-adj="tiltup" title="Raise the end of the line">${ICON.tiltup} Tilt up</button>
+        <button class="btn" data-adj="rewrite" title="Write this line again, a little differently">${ICON.shuffle} Rewrite</button>
+        <button class="btn" data-adj="down">${ICON.down} Down</button>
+        <button class="btn" data-adj="tiltdown" title="Lower the end of the line">${ICON.tiltdown} Tilt down</button>
+        <button class="btn ghost" data-adj="reset">Reset</button>
+      </div>
+    </section>
     <label class="check"><input type="checkbox" id="skipused" ${store.skipUsed ? "checked" : ""}> Skip lines that already have writing</label>
     <div id="warnings"></div>
     <div class="stack" id="assignedwrap"></div>`
@@ -398,8 +431,43 @@ function renderText() {
       toast(`Imported ${text.split(" ").length} words from ${f.name}`);
     };
     $("#skipused").onchange = (e) => { store.skipUsed = e.target.checked; persist(); schedulePreview(0); };
+    $("#adjgrid").onclick = (e) => {
+      const b = e.target.closest("button[data-adj]");
+      if (b) adjustLine(line.id, b.dataset.adj);
+    };
   }
   renderWarnings();
+}
+
+const STEP_MM = 0.25, STEP_DEG = 0.5;
+function adjustLine(id, action) {
+  const a = { dy_mm: 0, tilt_deg: 0, seed: null, ...(store.adjust[id] || {}) };
+  const round = (v, s) => Math.round(v / s) * s;
+  if (action === "up") a.dy_mm = round(Math.min(4, a.dy_mm + STEP_MM), STEP_MM);
+  if (action === "down") a.dy_mm = round(Math.max(-4, a.dy_mm - STEP_MM), STEP_MM);
+  if (action === "tiltup") a.tilt_deg = round(Math.min(8, a.tilt_deg + STEP_DEG), STEP_DEG);
+  if (action === "tiltdown") a.tilt_deg = round(Math.max(-8, a.tilt_deg - STEP_DEG), STEP_DEG);
+  if (action === "rewrite") a.seed = Math.floor(Math.random() * 1e6);
+  if (action === "reset" || (!a.dy_mm && !a.tilt_deg && a.seed === null)) delete store.adjust[id];
+  else store.adjust[id] = a;
+  persist();
+  renderAdjust(id);
+  schedulePreview(action === "rewrite" ? 0 : 120);
+}
+
+function renderAdjust(id) {
+  const out = $("#adjval");
+  if (!out) return;
+  const a = store.adjust[id];
+  const placed = store.preview?.lines.some((l) => l.line_id === id);
+  const parts = [];
+  if (a?.dy_mm) parts.push(`${Math.abs(a.dy_mm)} mm ${a.dy_mm > 0 ? "up" : "down"}`);
+  if (a?.tilt_deg) parts.push(`tilt ${a.tilt_deg > 0 ? "+" : ""}${a.tilt_deg}°`);
+  if (a && a.seed !== null && a.seed !== undefined) parts.push("rewritten");
+  out.textContent = parts.join(" · ") || (placed ? "As written" : "Nothing on this line yet");
+  $$("#adjgrid button").forEach((b) => (b.disabled = !placed && b.dataset.adj !== "reset"));
+  const reset = $('#adjgrid [data-adj="reset"]');
+  if (reset) reset.disabled = !a;
 }
 
 function renderAssigned() {
@@ -437,15 +505,22 @@ function findOwner(id) {
 // ---- Style tab
 const SLIDERS = [
   ["x_height_mm", "Letter size", 1.6, 4.5, 0.1, (v) => `${v.toFixed(1)} mm`],
-  ["slant_deg", "Slant", -10, 30, 1, (v) => `${v > 0 ? "+" : ""}${v.toFixed(0)}°`],
+  ["slant_deg", "Slant", -15, 20, 1, (v) => (v === 0 ? "Natural" : `${v > 0 ? "+" : ""}${v.toFixed(0)}°`)],
   ["neatness", "Neatness", 0, 1, 0.05, (v) => (v < 0.35 ? "Rushed" : v < 0.7 ? "Everyday" : "Careful") + ` · ${Math.round(v * 100)}`],
-  ["letter_spacing", "Letter spacing", 0.7, 1.4, 0.01, (v) => `${Math.round(v * 100)}%`],
+  ["letter_spacing", "Letter spacing", 0.8, 1.5, 0.05, (v) => `${Math.round(v * 100)}%`],
   ["word_spacing", "Word spacing", 0.6, 1.8, 0.05, (v) => `${Math.round(v * 100)}%`],
+  ["baseline_mm", "Height on line", -1.5, 2, 0.1, (v) => (Math.abs(v) < 0.05 ? "On the line" : `${Math.abs(v).toFixed(1)} mm ${v > 0 ? "above" : "below"}`)],
 ];
 
 function renderStyle() {
   const s = store.style;
+  const mineMissing = !store.hands.some((h) => h.id === "mine");
   $("#tabbody").innerHTML = `
+    <div class="field">
+      <label for="hand"><h3>Handwriting</h3></label>
+      <select id="hand">${store.hands.map((h) => `<option value="${h.id}" ${h.id === s.hand ? "selected" : ""}>${esc(h.name)}</option>`).join("")}</select>
+      ${mineMissing && !store.status?.model_simulated ? '<span class="small muted">Save a few sentences in Capture and “Mine” appears here.</span>' : ""}
+    </div>
     <div class="stack">
       <h3>Profile</h3>
       <div class="seg" id="profiles">${store.presets.map((p) => `<button data-id="${p.id}" aria-pressed="${store.profile === p.id}">${esc(p.name)}</button>`).join("")}</div>
@@ -457,12 +532,13 @@ function renderStyle() {
       </div>`).join("")}
     <button class="btn" id="reseed">${ICON.shuffle} New variation</button>
     <p class="small muted">Same text, same settings and same variation always come out the same. “New variation” rewrites it a little differently, as you would.</p>
-    ${store.status?.model_simulated !== false ? '<div class="notice">This is placeholder scribble until the handwriting model is trained on your samples (Capture).</div>' : ""}`;
+    ${store.status?.model_simulated ? '<div class="notice">Placeholder scribble: the handwriting model isn’t installed. See the README.</div>' : ""}`;
+  $("#hand").onchange = (e) => { store.style = { ...store.style, hand: e.target.value }; persist(); schedulePreview(0); };
   $("#profiles").onclick = (e) => {
     const b = e.target.closest("button[data-id]");
     if (!b) return;
     const p = store.presets.find((x) => x.id === b.dataset.id);
-    store.style = { ...p.style, seed: store.style.seed };
+    store.style = { ...p.style, seed: store.style.seed, hand: store.style.hand };
     store.profile = p.id; persist(); renderStyle(); schedulePreview(0);
   };
   $$("input[type=range]", $("#tabbody")).forEach((inp) => inp.addEventListener("input", () => {

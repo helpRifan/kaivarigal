@@ -19,6 +19,7 @@ ASCENDERS = set("bdfhklt")
 DESCENDERS = set("gjpqy")
 WIDTH = {"m": 1.35, "w": 1.3, "i": 0.42, "l": 0.45, "j": 0.5, "t": 0.55, "f": 0.6, "r": 0.6, "s": 0.65}
 SAMPLES = 10
+BASE_SLANT_DEG = 8.0  # this fake hand's own slant; Style.slant_deg adds to it
 
 
 class FakeSynth:
@@ -109,5 +110,5 @@ class FakeSynth:
             return np.zeros((0, 3)), 0.0
 
         pts = S.from_strokes(all_strokes)
-        pts[:, 0] -= pts[:, 1] * math.tan(math.radians(style.slant_deg))
+        pts[:, 0] -= pts[:, 1] * math.tan(math.radians(BASE_SLANT_DEG + style.slant_deg))
         return pts, x

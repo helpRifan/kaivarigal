@@ -24,7 +24,7 @@ from PIL import Image, ImageChops
 from pydantic import BaseModel, Field
 
 from hwrobot import strokes as S
-from hwrobot.layout.engine import LayoutResult, layout_page
+from hwrobot.layout.engine import LayoutResult, LineAdjust, layout_page
 from hwrobot.model.base import PRESETS, Style
 from hwrobot.model.fake import FakeSynth
 from hwrobot.page import Page
@@ -57,14 +57,22 @@ DEFAULT_SETTINGS = {"pen_width_mm": 0.5, "feed_rate": 1500, "sim_speedup": 12.0,
 
 class StyleIn(BaseModel):
     x_height_mm: float = Field(2.6, ge=1.2, le=6.0)
-    slant_deg: float = Field(8.0, ge=-20, le=35)
+    slant_deg: float = Field(0.0, ge=-25, le=30)
     neatness: float = Field(0.7, ge=0, le=1)
     letter_spacing: float = Field(1.0, ge=0.6, le=1.6)
     word_spacing: float = Field(1.0, ge=0.5, le=2.0)
     seed: int = 0
+    hand: str = Field("hs-9", max_length=16)
+    baseline_mm: float = Field(0.0, ge=-3, le=3)
 
     def to_style(self) -> Style:
         return Style(**self.model_dump())
+
+
+class LineAdjustIn(BaseModel):
+    dy_mm: float = Field(0.0, ge=-4, le=4)
+    tilt_deg: float = Field(0.0, ge=-8, le=8)
+    seed: int | None = None
 
 
 class WriteIn(BaseModel):
@@ -72,6 +80,10 @@ class WriteIn(BaseModel):
     assignments: dict[str, str] = {}
     style: StyleIn = StyleIn()
     skip_used: bool = True
+    line_adjust: dict[str, LineAdjustIn] = {}
+
+    def adjust(self) -> dict[str, LineAdjust]:
+        return {k: LineAdjust(**v.model_dump()) for k, v in self.line_adjust.items()}
 
 
 class JobIn(WriteIn):
@@ -159,10 +171,28 @@ def _grid_points(page: Page, step: float = 20.0) -> S.Points:
 # ----------------------------------------------------------------------------- app
 
 
+def _make_synth(samples_dir: Path, use_model: bool | None):
+    """The real model when its weights are present (or required), else the placeholder."""
+    if use_model is False:
+        return FakeSynth()
+    try:
+        from hwrobot.model import hs_bridge
+        if hs_bridge.available():
+            from hwrobot.model.synth import ModelSynth
+            return ModelSynth(samples_dir=samples_dir)
+        if use_model:
+            raise FileNotFoundError(f"model weights not found at {hs_bridge.weights_path()}")
+    except ImportError as exc:  # torch / scipy / matplotlib missing
+        if use_model:
+            raise
+        print(f"Handwriting model unavailable ({exc}); using placeholder handwriting.")
+    return FakeSynth()
+
+
 class AppState:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, use_model: bool | None = None) -> None:
         self.data_dir = data_dir
-        self.synth = FakeSynth()
+        self.synth = _make_synth(data_dir / "samples", use_model)
         self.pages: dict[str, Page] = {}
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
@@ -208,7 +238,8 @@ class AppState:
     def layout(self, req: WriteIn) -> tuple[Page, LayoutResult]:
         page = self.get_page(req.page_id)
         try:
-            return page, layout_page(page, req.assignments, self.synth, req.style.to_style(), req.skip_used)
+            return page, layout_page(page, req.assignments, self.synth, req.style.to_style(),
+                                     req.skip_used, req.adjust())
         except KeyError as exc:
             raise HTTPException(400, str(exc)) from exc
 
@@ -297,8 +328,9 @@ def _truncate(points: S.Points, length_mm: float) -> S.Points:
     return S.from_strokes(kept)
 
 
-def create_app(data_dir: str | Path = "data") -> FastAPI:
-    state = AppState(Path(data_dir))
+def create_app(data_dir: str | Path = "data", use_model: bool | None = None) -> FastAPI:
+    """``use_model``: None = use the real model if available, False = placeholder, True = require it."""
+    state = AppState(Path(data_dir), use_model)
     app = FastAPI(title="Kaivarigal", docs_url="/api/docs", redoc_url=None)
     app.state.hw = state
 
@@ -383,6 +415,12 @@ def create_app(data_dir: str | Path = "data") -> FastAPI:
     @app.get("/api/styles")
     def styles() -> list[dict]:
         return [{"id": k, "name": name, "style": s.to_dict()} for k, (name, s) in PRESETS.items()]
+
+    @app.get("/api/hands")
+    def hands() -> list[dict]:
+        if hasattr(state.synth, "hands"):
+            return state.synth.hands()
+        return [{"id": "hs-9", "name": "Placeholder scribble"}]
 
     @app.post("/api/preview")
     def preview(body: WriteIn) -> dict:

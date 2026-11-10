@@ -76,6 +76,37 @@ def test_unknown_line_rejected():
         layout_page(make_page("ruled-8"), {"nope": "x"}, synth, STYLE)
 
 
+def test_line_adjust_moves_tilts_and_rewrites_one_line():
+    from hwrobot.layout.engine import LineAdjust
+
+    page = make_page("ruled-8")
+    texts = {"L1": "first line", "L2": "second line"}
+    base = {l.line_id: l.points for l in layout_page(page, texts, synth, STYLE).lines}
+
+    up = layout_page(page, texts, synth, STYLE, adjust={"L1": LineAdjust(dy_mm=1.0)})
+    moved = {l.line_id: l.points for l in up.lines}
+    assert S.bounding_box(moved["L1"])[1] == pytest.approx(S.bounding_box(base["L1"])[1] - 1.0)
+    assert (moved["L2"] == base["L2"]).all()
+
+    tilt = layout_page(page, texts, synth, STYLE, adjust={"L1": LineAdjust(tilt_deg=3)})
+    p = tilt.lines[0].points
+    right_end = p[p[:, 0] > p[:, 0].max() - 3]
+    orig = base["L1"][base["L1"][:, 0] > base["L1"][:, 0].max() - 3]
+    assert right_end[:, 1].mean() < orig[:, 1].mean()  # end of line raised
+
+    redo = layout_page(page, texts, synth, STYLE, adjust={"L2": LineAdjust(seed=99)})
+    redone = {l.line_id: l.points for l in redo.lines}
+    assert (redone["L1"] == base["L1"]).all()
+    assert redone["L2"].shape != base["L2"].shape or not (redone["L2"] == base["L2"]).all()
+
+
+def test_baseline_offset_raises_everything():
+    page = make_page("ruled-8")
+    a = layout_page(page, {"L1": "hello"}, synth, STYLE).lines[0].points
+    b = layout_page(page, {"L1": "hello"}, synth, STYLE.with_(baseline_mm=0.5)).lines[0].points
+    assert (a[:, 1] - b[:, 1]) == pytest.approx(0.5)
+
+
 def test_all_points_valid():
     r = layout_page(make_page("ruled-8"), {"L1": LONG}, synth, STYLE)
     S.as_array(r.all_points())

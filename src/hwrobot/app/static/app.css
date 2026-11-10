@@ -269,6 +269,10 @@ input[type="range"] { width: 100%; height: 36px; accent-color: var(--accent); ma
 .assigned-list button[aria-current="true"] { outline: 2px solid var(--accent); }
 .assigned-list b { color: var(--accent); min-width: 2.2em; font-variant-numeric: tabular-nums; }
 .assigned-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-copy); }
+.adjust { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.adj-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.adj-grid .btn { padding: 0 8px; font-size: 14px; }
+.adj-grid .btn:not(.ghost) { background: var(--surface); }
 .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .fact { padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); }
 .fact b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }

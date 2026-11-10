@@ -18,11 +18,13 @@ class Style:
     """Controls exposed in the UI. The real model maps ``neatness`` to its sampling bias."""
 
     x_height_mm: float = 2.6      # height of a lowercase 'x'
-    slant_deg: float = 8.0        # positive leans right
-    neatness: float = 0.7         # 0 = rushed and varied, 1 = careful and even
+    slant_deg: float = 0.0        # extra slant on top of the hand's own; positive leans right
+    neatness: float = 0.7         # 0 = rushed and varied, 1 = careful and even (model bias)
     letter_spacing: float = 1.0   # multiplier
     word_spacing: float = 1.0     # multiplier
     seed: int = 0                 # same seed + same text = same result
+    hand: str = "hs-9"            # whose handwriting: "mine" or a reference style "hs-N"
+    baseline_mm: float = 0.0      # raise (+) or lower (-) all writing relative to the rules
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -33,10 +35,10 @@ class Style:
 
 #: Style profiles shown in the UI.
 PRESETS: dict[str, tuple[str, Style]] = {
-    "normal": ("Normal", Style()),
-    "exam": ("Exam (fast)", Style(x_height_mm=2.4, slant_deg=13, neatness=0.4,
+    "normal": ("Normal", Style(letter_spacing=1.1, word_spacing=1.15)),
+    "exam": ("Exam (fast)", Style(x_height_mm=2.4, slant_deg=5, neatness=0.35,
                                   letter_spacing=0.92, word_spacing=0.9)),
-    "neat": ("Neat notes", Style(x_height_mm=2.8, slant_deg=5, neatness=0.95,
+    "neat": ("Neat notes", Style(x_height_mm=2.8, slant_deg=-2, neatness=0.95,
                                  letter_spacing=1.05, word_spacing=1.1)),
 }
 
@@ -57,5 +59,8 @@ class HandwritingSynth(Protocol):
         ...
 
     def measure(self, text: str, style: Style) -> float:
-        """Advance width in mm of ``text`` (used for word wrapping)."""
+        """Advance width in mm of ``text`` (used for word wrapping). May be an estimate."""
         ...
+
+    # Optional: ``write_many(texts, style) -> list[Points]`` renders several lines at once
+    # (layout uses it when present), and ``last_unsupported`` lists characters it had to change.

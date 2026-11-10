@@ -1,0 +1,4 @@
+[submodule "third_party/handwriting-synthesis"]
+	path = third_party/handwriting-synthesis
+	url = https://github.com/helpRifan/handwriting-synthesis.git
+	ignore = untracked

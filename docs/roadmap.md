@@ -7,9 +7,10 @@ will use, so swapping one in never changes the UI.
 | Step | What | Status |
 |---|---|---|
 | 1 | Skeleton: stroke format, simulator plotter, tests | done |
-| 2 | **Web app with fake data**: every screen working end to end | this step |
+| 2 | **Web app with fake data**: every screen working end to end | done |
+| 4a | Handwriting model: PyTorch port of handwriting-synthesis running its pretrained weights; 13 styles + priming with my Capture samples | done |
 | 3 | Page vision: real corner detection, perspective warp, ruled-line detection (OpenCV) | next |
-| 4 | Handwriting model: Graves LSTM + attention + MDN, IAM-OnDB pretrain, fine-tune on my samples | after |
+| 4b | Fine-tune the model on my Capture samples (needs a GPU / Colab) | after enough samples |
 | 5 | Hardware: G-code, GRBL serial backend, real calibration, move to the Pi | when parts arrive |
 
 ## The app (step 2)

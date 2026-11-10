@@ -10,7 +10,7 @@ from hwrobot.app.server import create_app
 
 @pytest.fixture
 def client(tmp_path):
-    with TestClient(create_app(tmp_path)) as c:
+    with TestClient(create_app(tmp_path, use_model=False)) as c:
         c.put("/api/settings", json={"sim_speedup": 1e6})
         yield c
 
